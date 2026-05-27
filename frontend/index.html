@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PE Predictor — Прогноз риска ПН→ПЭ</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  background: #f0f2f8;
+  color: #1e1e3a;
+}
+
+/* ─── HEADER ─── */
+header {
+  background: linear-gradient(135deg, #1a1a4e 0%, #2d1b69 100%);
+  color: #fff;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 12px rgba(0,0,0,.3);
+}
+header .title-block h1 { font-size: 14px; font-weight: 700; letter-spacing: .3px; }
+header .title-block h1 span { color: #c084fc; }
+header .title-block p { font-size: 11px; color: #a5b4fc; margin-top: 2px; }
+header .controls { display: flex; align-items: center; gap: 12px; }
+header select, header button.secondary {
+  padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.12); color: #fff; font-size: 12px; cursor: pointer;
+}
+header button.secondary:hover { background: rgba(255,255,255,.22); }
+#patientListBtn { background: rgba(255,255,255,.12); }
+
+/* ─── LAYOUT ─── */
+.layout {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 16px;
+  padding: 16px;
+  min-height: calc(100vh - 56px);
+}
+
+/* ─── CARD ─── */
+.card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 6px rgba(0,0,0,.08);
+}
+.card-header {
+  background: linear-gradient(135deg, #1a1a4e, #2d1b69);
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 10px 10px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+}
+.card-body { padding: 12px 14px; }
+
+/* ─── FORM ─── */
+.form-col { display: flex; flex-direction: column; gap: 10px; }
+.section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: #5b21b6;
+  padding: 4px 0;
+  border-bottom: 1px solid #ede9fe;
+  margin-bottom: 4px;
+}
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.field-grid.cols1 { grid-template-columns: 1fr; }
+.field { display: flex; flex-direction: column; gap: 3px; }
+.field label { font-size: 11px; color: #6b7280; }
+.field input, .field select {
+  padding: 5px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #1e1e3a;
+  background: #fafafa;
+  transition: border .15s;
+}
+.field input:focus, .field select:focus {
+  outline: none;
+  border-color: #7c3aed;
+  background: #fff;
+}
+.field.checkbox-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+}
+.field.checkbox-field label { color: #374151; font-size: 12px; cursor: pointer; }
+.field.checkbox-field input[type=checkbox] {
+  width: 15px; height: 15px;
+  accent-color: #7c3aed;
+  cursor: pointer;
+}
+
+/* ─── CALC BUTTON ─── */
+#calcBtn {
+  width: 100%;
+  padding: 11px;
+  background: linear-gradient(135deg, #6d28d9, #7c3aed);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  letter-spacing: .5px;
+  transition: opacity .2s, transform .1s;
+  margin-top: 4px;
+}
+#calcBtn:hover { opacity: .9; }
+#calcBtn:active { transform: scale(.98); }
+#calcBtn:disabled { opacity: .6; cursor: not-allowed; }
+
+/* ─── RESULTS PANEL ─── */
+#resultsPanel { display: flex; flex-direction: column; gap: 12px; }
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 300px;
+  color: #9ca3af;
+}
+.placeholder svg { opacity: .3; }
+.placeholder p { font-size: 14px; }
+
+/* ─── GAUGE ─── */
+.gauge-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.gauge-wrap svg { width: 220px; }
+.risk-percent {
+  font-size: 42px;
+  font-weight: 800;
+  line-height: 1;
+  margin-top: -6px;
+}
+.risk-label {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  margin-top: 2px;
+}
+.risk-label.HIGH { color: #dc2626; }
+.risk-label.MODERATE { color: #d97706; }
+.risk-label.LOW { color: #16a34a; }
+.risk-percent.HIGH { color: #dc2626; }
+.risk-percent.MODERATE { color: #d97706; }
+.risk-percent.LOW { color: #16a34a; }
+.gauge-scale {
+  display: flex;
+  width: 220px;
+  height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.gauge-scale .g-low { flex: 30; background: #16a34a; }
+.gauge-scale .g-mod { flex: 30; background: #d97706; }
+.gauge-scale .g-hi  { flex: 40; background: #dc2626; }
+.scale-labels {
+  display: flex;
+  width: 220px;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.alert-box {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #7f1d1d;
+  line-height: 1.5;
+}
+.alert-box.MODERATE { background: #fffbeb; border-color: #fde68a; color: #78350f; }
+.alert-box.LOW { background: #f0fdf4; border-color: #bbf7d0; color: #14532d; }
+
+/* ─── PREDICTORS ─── */
+.predictor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 12px;
+}
+.predictor-row:last-child { border-bottom: none; }
+.pred-arrow { font-size: 14px; width: 18px; text-align: center; }
+.pred-arrow.up { color: #dc2626; }
+.pred-arrow.down { color: #16a34a; }
+.pred-label { flex: 1; color: #374151; }
+.pred-bar-wrap { width: 80px; background: #f3f4f6; border-radius: 3px; height: 6px; overflow: hidden; }
+.pred-bar { height: 100%; background: #dc2626; border-radius: 3px; }
+.pred-bar.down { background: #16a34a; }
+.pred-pct { width: 32px; text-align: right; font-weight: 700; color: #1e1e3a; font-size: 11px; }
+
+/* ─── RECS ─── */
+.rec-item {
+  display: flex;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #374151;
+}
+.rec-item:last-child { border-bottom: none; }
+.rec-check { color: #16a34a; flex-shrink: 0; font-size: 14px; }
+
+/* ─── CHART ─── */
+.chart-wrap { position: relative; height: 220px; }
+
+/* ─── PDF BUTTON ─── */
+#pdfBtn {
+  width: 100%;
+  padding: 9px;
+  background: #1e1e3a;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: opacity .2s;
+}
+#pdfBtn:hover { opacity: .85; }
+#pdfBtn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ─── MODEL INFO ─── */
+.model-info { font-size: 11px; color: #6b7280; line-height: 1.7; }
+.model-info b { color: #1e1e3a; }
+
+/* ─── PATIENT LIST MODAL ─── */
+#modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+}
+#modal.open { display: flex; }
+.modal-box {
+  background: #fff;
+  border-radius: 12px;
+  width: 720px;
+  max-width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,.3);
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e5e7eb;
+  font-weight: 700;
+  font-size: 14px;
+}
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #6b7280; }
+.modal-body { padding: 14px 18px; overflow-y: auto; flex: 1; }
+
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; padding: 6px 10px; background: #f9fafb; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
+td { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; }
+tr:hover td { background: #fafafa; }
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.badge.HIGH { background: #fef2f2; color: #dc2626; }
+.badge.MODERATE { background: #fffbeb; color: #d97706; }
+.badge.LOW { background: #f0fdf4; color: #16a34a; }
+.btn-del { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 14px; }
+.btn-pdf { background: none; border: none; color: #7c3aed; cursor: pointer; font-size: 14px; }
+
+/* ─── ERROR ─── */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: #1e1e3a;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.3);
+  z-index: 999;
+  display: none;
+}
+.toast.show { display: block; animation: slideUp .3s ease; }
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="title-block">
+    <h1>ИММУНОГЕНЕТИЧЕСКИЙ ПРОГНОЗ <span>ПН → ПРЕЭКЛАМПСИЯ</span></h1>
+    <p>Система прогнозирования риска на основе иммунологических, ангиогенных и генетических маркеров</p>
+  </div>
+  <div class="controls">
+    <select id="langSelect" title="Язык отчёта">
+      <option value="ru">🇷🇺 Русский</option>
+      <option value="uz">🇺🇿 Uzbekcha</option>
+    </select>
+    <button class="secondary" id="patientListBtn" onclick="openModal()">📋 База пациентов</button>
+  </div>
+</header>
+
+<!-- MAIN LAYOUT -->
+<div class="layout">
+
+  <!-- LEFT: FORM -->
+  <div>
+    <div class="card">
+      <div class="card-header">Данные пациентки</div>
+      <div class="card-body">
+        <form id="patientForm" class="form-col" onsubmit="return false">
+
+          <!-- Identity -->
+          <div>
+            <div class="section-title">Идентификация</div>
+            <div class="field-grid">
+              <div class="field">
+                <label>ФИО пациентки</label>
+                <input type="text" name="full_name" placeholder="Иванова А.А.">
+              </div>
+              <div class="field">
+                <label>Код / ID</label>
+                <input type="text" name="patient_code" placeholder="P-001">
+              </div>
+            </div>
+          </div>
+
+          <!-- Clinical -->
+          <div>
+            <div class="section-title">1. Клинические данные</div>
+            <div class="field-grid">
+              <div class="field"><label>Возраст (лет)</label><input type="number" name="age" value="29" min="14" max="55"></div>
+              <div class="field"><label>Срок берем. (нед.)</label><input type="number" name="gestational_age" value="24" min="10" max="42"></div>
+              <div class="field"><label>ИМТ (кг/м²)</label><input type="number" name="bmi" value="26.4" step="0.1"></div>
+              <div class="field"><label>Паритет</label><input type="number" name="parity" value="1" min="0" max="10"></div>
+              <div class="field"><label>АД MAP (мм рт.ст.)</label><input type="number" name="map" value="95" min="50" max="150"></div>
+            </div>
+            <div class="field-grid" style="margin-top:6px">
+              <div class="field checkbox-field"><input type="checkbox" name="smoking" id="c_smoking"><label for="c_smoking">Курение</label></div>
+              <div class="field checkbox-field"><input type="checkbox" name="chronic_hypertension" id="c_htn"><label for="c_htn">Хр. гипертензия</label></div>
+              <div class="field checkbox-field"><input type="checkbox" name="diabetes" id="c_dm"><label for="c_dm">Сахарный диабет</label></div>
+              <div class="field checkbox-field"><input type="checkbox" name="anemia" id="c_anemia" checked><label for="c_anemia">Анемия</label></div>
+              <div class="field checkbox-field"><input type="checkbox" name="previous_pe" id="c_pe"><label for="c_pe">ПЭ в анамнезе</label></div>
+            </div>
+          </div>
+
+          <!-- Placental -->
+          <div>
+            <div class="section-title">2. Плацентарная недостаточность</div>
+            <div class="field-grid">
+              <div class="field checkbox-field" style="grid-column:span 2"><input type="checkbox" name="pn_diagnosis" id="c_pn" checked><label for="c_pn">Диагноз ПН подтверждён</label></div>
+              <div class="field">
+                <label>Степень ПН</label>
+                <select name="pn_degree">
+                  <option value="I">I</option>
+                  <option value="II" selected>II</option>
+                  <option value="III">III</option>
+                </select>
+              </div>
+              <div class="field"><label>PI маточных артерий</label><input type="number" name="pi_uterine" value="1.85" step="0.01" min="0.5" max="4"></div>
+              <div class="field checkbox-field"><input type="checkbox" name="fgr" id="c_fgr" checked><label for="c_fgr">Задержка роста плода</label></div>
+            </div>
+          </div>
+
+          <!-- Immunological -->
+          <div>
+            <div class="section-title">3. Иммунологические маркеры (pg/ml)</div>
+            <div class="field-grid">
+              <div class="field"><label>IL-6</label><input type="number" name="il6" value="86.7" step="0.1"></div>
+              <div class="field"><label>IL-10</label><input type="number" name="il10" value="15.3" step="0.1"></div>
+              <div class="field"><label>MCP-1</label><input type="number" name="mcp1" value="312.4" step="0.1"></div>
+              <div class="field"><label>IP-10</label><input type="number" name="ip10" value="284.6" step="0.1"></div>
+              <div class="field"><label>TNF-α</label><input type="number" name="tnf_alpha" value="18.6" step="0.1"></div>
+            </div>
+          </div>
+
+          <!-- Angiogenic -->
+          <div>
+            <div class="section-title">4. Ангиогенные факторы (pg/ml)</div>
+            <div class="field-grid">
+              <div class="field"><label>VEGF-A</label><input type="number" name="vegfa" value="112.6" step="0.1"></div>
+              <div class="field"><label>PlGF</label><input type="number" name="pigf" value="82.1" step="0.1" oninput="autoRatio()"></div>
+              <div class="field"><label>sFlt-1</label><input type="number" name="sflt1" value="3450" step="1" oninput="autoRatio()"></div>
+              <div class="field">
+                <label>sFlt-1/PlGF (авто)</label>
+                <input type="number" name="sflt1_pigf_ratio" id="ratioField" value="42.1" step="0.1">
+              </div>
+            </div>
+          </div>
+
+          <!-- Genetic -->
+          <div>
+            <div class="section-title">5. Генетические полиморфизмы</div>
+            <div class="field-grid cols1">
+              <div class="field">
+                <label>IL6 rs1800795</label>
+                <select name="il6_rs1800795">
+                  <option value="CC">CC</option>
+                  <option value="GC">GC</option>
+                  <option value="GG" selected>GG</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>IL10 rs1800896</label>
+                <select name="il10_rs1800896">
+                  <option value="GG">GG</option>
+                  <option value="GA">GA</option>
+                  <option value="AA" selected>AA</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>VEGFA rs2010963</label>
+                <select name="vegfa_rs2010963">
+                  <option value="CC">CC</option>
+                  <option value="CT" selected>CT</option>
+                  <option value="TT">TT</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <button type="button" id="calcBtn" onclick="calculateRisk()">
+            ⚡ Рассчитать риск перехода
+          </button>
+
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: RESULTS -->
+  <div id="resultsPanel">
+
+    <!-- Placeholder -->
+    <div class="card" id="placeholderCard">
+      <div class="card-body placeholder" style="min-height:400px">
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+          <circle cx="32" cy="32" r="30" stroke="#7c3aed" stroke-width="2"/>
+          <path d="M32 16v16l10 6" stroke="#7c3aed" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+        <p>Заполните форму и нажмите<br><b>«Рассчитать риск»</b></p>
+      </div>
+    </div>
+
+    <!-- Result card (hidden until calc) -->
+    <div class="card" id="resultCard" style="display:none">
+      <div class="card-header" id="resultCardHeader">6. Результат прогноза</div>
+      <div class="card-body" style="display:flex;flex-direction:column;align-items:center;gap:10px">
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 220 130" xmlns="http://www.w3.org/2000/svg">
+            <path d="M 20 110 A 90 90 0 0 1 200 110" fill="none" stroke="#f3f4f6" stroke-width="22" stroke-linecap="round"/>
+            <path id="gaugeArc" d="M 20 110 A 90 90 0 0 1 200 110" fill="none" stroke="#dc2626" stroke-width="22"
+              stroke-linecap="round" stroke-dasharray="283" stroke-dashoffset="283"/>
+          </svg>
+          <div class="risk-percent" id="riskPercent">—</div>
+          <div class="risk-label" id="riskLabel">—</div>
+        </div>
+        <div class="gauge-scale"><div class="g-low"></div><div class="g-mod"></div><div class="g-hi"></div></div>
+        <div class="scale-labels"><span>НИЗКИЙ &lt;30%</span><span>УМЕРЕННЫЙ 30–60%</span><span>ВЫСОКИЙ &gt;60%</span></div>
+        <div class="alert-box" id="alertBox" style="width:100%"></div>
+      </div>
+    </div>
+
+    <div id="predictorsCard" class="card" style="display:none">
+      <div class="card-header">7. Основные предикторы (AI Analysis)</div>
+      <div class="card-body" id="predictorsList"></div>
+    </div>
+
+    <div id="dynamicsCard" class="card" style="display:none">
+      <div class="card-header">8. Динамика маркеров</div>
+      <div class="card-body">
+        <div class="chart-wrap"><canvas id="dynamicsChart"></canvas></div>
+      </div>
+    </div>
+
+    <div id="recsCard" class="card" style="display:none">
+      <div class="card-header">9. Рекомендации</div>
+      <div class="card-body" id="recsList"></div>
+    </div>
+
+    <div id="modelCard" class="card" style="display:none">
+      <div class="card-header">10. Информация о модели</div>
+      <div class="card-body">
+        <div class="model-info" id="modelInfo"></div>
+        <button id="pdfBtn" onclick="downloadPdf()" style="margin-top:12px" disabled>
+          📄 Скачать PDF-отчёт
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- PATIENT LIST MODAL -->
+<div id="modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span>📋 База пациентов</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <table id="patientsTable">
+        <thead>
+          <tr>
+            <th>#</th><th>Пациентка</th><th>Код</th><th>Срок</th><th>Риск %</th><th>Уровень</th><th>Дата</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="patientsBody"><tr><td colspan="8" style="text-align:center;color:#9ca3af;padding:20px">Загрузка...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = 'http://localhost:8000/api';
+let currentPatientId = null;
+let dynamicsChart = null;
+
+// ─── Auto-calculate ratio ───
+function autoRatio() {
+  const sflt1 = parseFloat(document.querySelector('[name=sflt1]').value) || 0;
+  const pigf = parseFloat(document.querySelector('[name=pigf]').value) || 1;
+  if (sflt1 && pigf) {
+    document.getElementById('ratioField').value = (sflt1 / pigf).toFixed(1);
+  }
+}
+
+// ─── Collect form data ───
+function collectFormData() {
+  const f = name => {
+    const el = document.querySelector(`[name="${name}"]`);
+    if (!el) return null;
+    if (el.type === 'checkbox') return el.checked;
+    if (el.type === 'number') return parseFloat(el.value) || 0;
+    return el.value;
+  };
+  return {
+    lang: document.getElementById('langSelect').value,
+    patient: { full_name: f('full_name'), patient_code: f('patient_code') },
+    clinical: {
+      age: f('age'), gestational_age: f('gestational_age'), bmi: f('bmi'),
+      parity: f('parity'), smoking: f('smoking'), map: f('map'),
+      chronic_hypertension: f('chronic_hypertension'), diabetes: f('diabetes'),
+      anemia: f('anemia'), previous_pe: f('previous_pe'),
+    },
+    placental: {
+      diagnosis: f('pn_diagnosis'), degree: f('pn_degree'),
+      pi_uterine: f('pi_uterine'), fgr: f('fgr'),
+    },
+    immunological: {
+      il6: f('il6'), il10: f('il10'), mcp1: f('mcp1'),
+      ip10: f('ip10'), tnf_alpha: f('tnf_alpha'),
+    },
+    angiogenic: {
+      vegfa: f('vegfa'), pigf: f('pigf'),
+      sflt1: f('sflt1'), sflt1_pigf_ratio: f('sflt1_pigf_ratio'),
+    },
+    genetic: {
+      il6_rs1800795: f('il6_rs1800795'),
+      il10_rs1800896: f('il10_rs1800896'),
+      vegfa_rs2010963: f('vegfa_rs2010963'),
+    },
+  };
+}
+
+// ─── Main: Calculate risk ───
+async function calculateRisk() {
+  const btn = document.getElementById('calcBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Вычисление...';
+
+  try {
+    const resp = await fetch(`${API}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(collectFormData()),
+    });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'Ошибка сервера');
+
+    currentPatientId = data.patient_id;
+    renderResults(data.result, data.model_info);
+    showToast('✓ Расчёт выполнен');
+  } catch (err) {
+    showToast('❌ ' + err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Рассчитать риск перехода';
+  }
+}
+
+// ─── Render results ───
+function renderResults(result, modelInfo) {
+  const level = result.risk_level;
+  const pct = result.risk_percent;
+
+  // Show all result cards, hide placeholder
+  document.getElementById('placeholderCard').style.display = 'none';
+  ['resultCard','predictorsCard','dynamicsCard','recsCard','modelCard'].forEach(id => {
+    document.getElementById(id).style.display = '';
+  });
+
+  // Gauge
+  const ARC_LEN = 283;
+  const offset = ARC_LEN * (1 - pct / 100);
+  const arc = document.getElementById('gaugeArc');
+  const colors = { HIGH: '#dc2626', MODERATE: '#d97706', LOW: '#16a34a' };
+  arc.style.stroke = colors[level] || '#dc2626';
+  arc.style.strokeDashoffset = offset;
+
+  const rp = document.getElementById('riskPercent');
+  rp.textContent = pct.toFixed(0) + '%';
+  rp.className = 'risk-percent ' + level;
+
+  const rl = document.getElementById('riskLabel');
+  rl.textContent = result.risk_label;
+  rl.className = 'risk-label ' + level;
+
+  const ab = document.getElementById('alertBox');
+  ab.textContent = result.risk_alert;
+  ab.className = 'alert-box ' + level;
+
+  // Predictors
+  const pl = document.getElementById('predictorsList');
+  pl.innerHTML = result.top_predictors.map(p => `
+    <div class="predictor-row">
+      <span class="pred-arrow ${p.direction}">${p.direction === 'up' ? '▲' : '▼'}</span>
+      <span class="pred-label">${p.label}</span>
+      <div class="pred-bar-wrap"><div class="pred-bar ${p.direction}" style="width:${p.contribution}%"></div></div>
+      <span class="pred-pct">${p.contribution}%</span>
+    </div>
+  `).join('');
+
+  // Marker dynamics chart
+  renderDynamicsChart(result.marker_dynamics);
+
+  // Recommendations
+  const rl2 = document.getElementById('recsList');
+  rl2.innerHTML = result.recommendations.map(r => `
+    <div class="rec-item"><span class="rec-check">✓</span><span>${r}</span></div>
+  `).join('');
+
+  // Model info
+  document.getElementById('modelInfo').innerHTML = `
+    <b>Алгоритм:</b> ${modelInfo.algorithm}<br>
+    <b>Внутренняя валидация (AUC):</b> ${modelInfo.auc}<br>
+    <b>Дата последнего обновления:</b> ${modelInfo.last_updated}<br>
+    <b>Использована модель:</b> ${result.model_used}
+  `;
+
+  // Enable PDF button
+  document.getElementById('pdfBtn').disabled = false;
+
+  // Scroll to results
+  document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ─── Chart ───
+function renderDynamicsChart(dynamics) {
+  const ctx = document.getElementById('dynamicsChart').getContext('2d');
+  if (dynamicsChart) dynamicsChart.destroy();
+
+  dynamicsChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dynamics.weeks.map(w => `${w} нед.`),
+      datasets: [
+        {
+          label: 'IL-6 (pg/ml)',
+          data: dynamics.il6,
+          borderColor: '#dc2626',
+          backgroundColor: 'rgba(220,38,38,.08)',
+          tension: 0.4, pointRadius: 4, yAxisID: 'y',
+        },
+        {
+          label: 'IL-10 (pg/ml)',
+          data: dynamics.il10,
+          borderColor: '#16a34a',
+          backgroundColor: 'rgba(22,163,74,.08)',
+          tension: 0.4, pointRadius: 4, yAxisID: 'y',
+        },
+        {
+          label: 'VEGF-A (pg/ml)',
+          data: dynamics.vegfa,
+          borderColor: '#2563eb',
+          backgroundColor: 'rgba(37,99,235,.08)',
+          tension: 0.4, pointRadius: 4, yAxisID: 'y',
+        },
+        {
+          label: 'sFlt-1/PlGF',
+          data: dynamics.sflt1_pigf_ratio,
+          borderColor: '#7c3aed',
+          backgroundColor: 'rgba(124,58,237,.08)',
+          tension: 0.4, pointRadius: 4, yAxisID: 'y2',
+          borderDash: [5, 3],
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { font: { size: 11 }, boxWidth: 20 } },
+      },
+      scales: {
+        y: { position: 'left', title: { display: true, text: 'pg/ml', font: { size: 10 } } },
+        y2: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Ratio', font: { size: 10 } } },
+      },
+    },
+  });
+}
+
+// ─── PDF download ───
+async function downloadPdf() {
+  if (!currentPatientId) return;
+  const lang = document.getElementById('langSelect').value;
+  const btn = document.getElementById('pdfBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Генерация PDF...';
+  try {
+    const resp = await fetch(`${API}/report/${currentPatientId}?lang=${lang}`);
+    if (!resp.ok) throw new Error('Ошибка генерации PDF');
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `PE_Report_${currentPatientId}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('✓ PDF скачан');
+  } catch (err) {
+    showToast('❌ ' + err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📄 Скачать PDF-отчёт';
+  }
+}
+
+// ─── Patient list modal ───
+async function openModal() {
+  document.getElementById('modal').classList.add('open');
+  await loadPatients();
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+}
+
+async function loadPatients() {
+  const tbody = document.getElementById('patientsBody');
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#9ca3af;padding:20px">Загрузка...</td></tr>';
+  try {
+    const data = await fetch(`${API}/patients`).then(r => r.json());
+    if (!data.patients.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#9ca3af;padding:20px">Пациентов пока нет</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.patients.map(p => `
+      <tr>
+        <td>${p.id}</td>
+        <td>${p.full_name || '—'}</td>
+        <td>${p.patient_code || '—'}</td>
+        <td>${p.clinical.gestational_age || '—'} нед.</td>
+        <td><b>${p.result.risk_percent?.toFixed(0) || '—'}%</b></td>
+        <td><span class="badge ${p.result.risk_level}">${riskRu(p.result.risk_level)}</span></td>
+        <td>${new Date(p.created_at).toLocaleDateString('ru')}</td>
+        <td style="display:flex;gap:6px">
+          <button class="btn-pdf" title="PDF" onclick="downloadPatientPdf(${p.id})">📄</button>
+          <button class="btn-del" title="Удалить" onclick="deletePatient(${p.id})">🗑</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#dc2626;padding:20px">Ошибка: ${err.message}</td></tr>`;
+  }
+}
+
+function riskRu(level) {
+  return { HIGH: 'ВЫСОКИЙ', MODERATE: 'УМЕРЕННЫЙ', LOW: 'НИЗКИЙ' }[level] || level;
+}
+
+async function deletePatient(id) {
+  if (!confirm(`Удалить пациента #${id}?`)) return;
+  await fetch(`${API}/patients/${id}`, { method: 'DELETE' });
+  await loadPatients();
+  showToast('✓ Пациент удалён');
+}
+
+async function downloadPatientPdf(id) {
+  const lang = document.getElementById('langSelect').value;
+  const resp = await fetch(`${API}/report/${id}?lang=${lang}`);
+  if (!resp.ok) { showToast('❌ Ошибка PDF', true); return; }
+  const blob = await resp.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `PE_Report_${id}.pdf`;
+  a.click();
+}
+
+// ─── Toast ───
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = isError ? '#dc2626' : '#1e1e3a';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// Close modal on backdrop click
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal')) closeModal();
+});
+</script>
+</body>
+</html>
